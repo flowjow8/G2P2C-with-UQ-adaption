@@ -6,3 +6,4 @@ results/
 experiments/nci/
 .env
 experiments/nci/help.txt
+.venv/
