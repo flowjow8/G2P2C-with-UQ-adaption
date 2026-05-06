@@ -37,6 +37,7 @@ def run_simulation(args, id=0, rollout_steps=288*30, n_trials=10, seed=0):
 
         counter = 0
         controller = BasalBolusController(args, patient_name=patients[id], use_bolus=True, use_cf=False)
+        # action = [0.0]
         action = controller.get_action(meal=0, glucose=state.CGM)
         for n_steps in range(0, rollout_steps):
             next_state, reward, is_done, info = env.step(action)
@@ -58,6 +59,7 @@ def run_simulation(args, id=0, rollout_steps=288*30, n_trials=10, seed=0):
             trial_history[counter] = [next_state.CGM, carbs, action[0], counter]
 
             counter += 1
+            # action = [0.0]
             action = controller.get_action(meal=bolus_carbs, glucose=next_state.CGM)  # BB Controller.
 
             if counter > (rollout_steps - 1) or (next_state.CGM <= 40) or (next_state.CGM >= 600):
