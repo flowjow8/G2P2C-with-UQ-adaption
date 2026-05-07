@@ -114,6 +114,11 @@ class Options:
         self.parser.add_argument('--plan_batch_size', type=int, default=1, help='')
         self.parser.add_argument('--planning_lr', type=float, default=1e-4, help='')
 
+        # Uncertainty Quantification 
+        self.parser.add_argument('--use_uq', type=int, default=0, help='')
+        self.parser.add_argument('--uq_threshold_action', type=float, default=0.15, help='threshold set for uncertainty level in order for an action to take place')
+
+
         # deprecated todo: refactor
         self.parser.add_argument('--bgp_pred_mode', type=bool, default=False, help='future bg prediction')
         self.parser.add_argument('--n_bgp_steps', type=int, default=0, help='future eprediction horizon')

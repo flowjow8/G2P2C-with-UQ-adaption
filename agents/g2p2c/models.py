@@ -105,9 +105,15 @@ class ActionModule(nn.Module):
         self.normalDistribution = torch.distributions.Normal
 
     def forward(self, extract_states, action_type='N'):
-        fc_output1 = F.relu(self.fc_layer1(extract_states))
-        fc_output2 = F.relu(self.fc_layer2(fc_output1))
-        fc_output = F.relu(self.fc_layer3(fc_output2))
+        # fc_output1 = F.relu(self.fc_layer1(extract_states))
+        # fc_output2 = F.relu(self.fc_layer2(fc_output1))
+        # fc_output = F.relu(self.fc_layer3(fc_output2))
+        # my code:
+        dropout_p = getattr(self.args, 'mc_dropout_p', 0.0) 
+        fc_output1 = F.dropout(F.relu(self.fc_layer1(extract_states)), p=dropout_p, training=self.training)
+        fc_output2 = F.dropout(F.relu(self.fc_layer2(fc_output1)), p=dropout_p, training=self.training)
+        fc_output = F.dropout(F.relu(self.fc_layer3(fc_output2)), p=dropout_p, training=self.training) 
+        # end of my code
         mu = F.tanh(self.mu(fc_output))
         sigma = F.sigmoid(self.sigma(fc_output) + 1e-5)
         z = self.normalDistribution(0, 1).sample()
@@ -274,6 +280,10 @@ class ActorCritic(nn.Module):
             self.Critic = torch.load(critic_path, map_location=device)
         self.distribution = torch.distributions.Normal
         self.is_testing_worker = False
+        # my code:
+        self.use_uq = getattr(args, 'use_mq', 0) == 1 
+        self.mc_samples = getattr(args, 'mc_samples', 20)
+        # end of my code
 
     def predict(self, s, feat):
         s = torch.as_tensor(s, dtype=torch.float32, device=self.device)
@@ -287,7 +297,34 @@ class ActorCritic(nn.Module):
         (mu, std, act, log_prob, a_cgm_mu, a_cgm_sig, a_cgm), (s_val, c_cgm_mu, c_cgm_sig, c_cgm) = self.predict(s, feat)
         data = dict(mu=mu, std=std, action=act, log_prob=log_prob, state_value=s_val, a_cgm_mu=a_cgm_mu,
                     a_cgm_sigma=a_cgm_sig, c_cgm_mu=c_cgm_mu, c_cgm_sigma=c_cgm_sig, a_cgm=a_cgm, c_cgm=c_cgm)
+        # my code:
+        if self.use_uq:
+            data.update(self.mc_dropout_uncertainty(s,feat))
+        # end of my code
         return {k: v.detach().cpu().numpy() for k, v in data.items()}
+
+    # my code:
+    def mc_dropout_uncertainty(self, s, feat):
+            was_training = self.Actor.training 
+            self.Actor.eval() 
+            self.Actor.ActionModule.train()
+
+            s = torch.as_tensor(s, dtype=torch.float32, device=self.device)
+            feat = torch.as_tensor(feat, dtype=torch.float32, device=self.device)
+            mus =[]
+            with torch.no_grad():
+                for _ in range(self.mc_samples):
+                    mu, _, _, _, _, _, _ = self.Actor(s, feat, None, mode= 'forward')
+                    mus.append(mu)
+        
+            if was_training:
+                self.Actor.train()
+            else:
+                self.Actor.eval()
+            
+            mus = torch.stack(mus)
+            return dict(uq_action_std=mus.std(dim=0, unbiased=False), uq_action_mean=mus.mean(dim=0),)
+        # end of my code
 
     def get_final_value(self, s, feat):
         s = torch.as_tensor(s, dtype=torch.float32, device=self.device)

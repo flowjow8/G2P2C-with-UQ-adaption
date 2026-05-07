@@ -51,4 +51,11 @@ def set_args(args):
     args.n_plan_epochs = 1
     #args.planning_lr = 1e-4 * 3
 
+    # my code:
+    # UQ default: MC dropout at 5% and 20 samples 
+    args.use_uq = getattr(args, 'use_uq', 0)
+    args.mc_dropout_p = 0.05 if args.use_uq else 0.0
+    args.mc_samples = 20
+    args.uq_action_threshold = getattr(args, 'uq_action_threshold', 0.15)
+    # end of my code 
     return args
