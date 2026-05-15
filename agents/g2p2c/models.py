@@ -281,7 +281,7 @@ class ActorCritic(nn.Module):
         self.distribution = torch.distributions.Normal
         self.is_testing_worker = False
         # my code:
-        self.use_uq = getattr(args, 'use_mq', 0) == 1 
+        self.use_uq = getattr(args, 'use_uq', 0) == 1 
         self.mc_samples = getattr(args, 'mc_samples', 20)
         # end of my code
 
