@@ -40,4 +40,10 @@ def set_args(args):
     args.vf_lr = 1e-4 * 3
     args.batch_size = 1024
 
+    # UQ defaults. Keep off for exact baseline reproducibility; enable from CLI.
+    args.use_uq = getattr(args, 'use_uq', 0)
+    args.mc_dropout_p = 0.3 if args.use_uq else 0.0
+    args.mc_samples = 20
+    args.uq_action_threshold = getattr(args, 'uq_action_threshold', 0.15)
+
     return args

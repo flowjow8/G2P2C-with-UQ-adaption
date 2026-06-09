@@ -37,7 +37,6 @@ class FeatureExtractor(nn.Module):
                 extract_states = torch.cat((lstm_output, feat), dim=0)
         else:
             extract_states = lstm_output
-        # note: extract_states and lstm_output is only different when handcraft features are used.
         return extract_states, lstm_output
 
 
@@ -63,9 +62,11 @@ class ActionModule(nn.Module):
         self.normalDistribution = torch.distributions.Normal
 
     def forward(self, extract_states, action_type='N'):
-        fc_output1 = F.relu(self.fc_layer1(extract_states))
-        fc_output2 = F.relu(self.fc_layer2(fc_output1))
-        fc_output = F.relu(self.fc_layer3(fc_output2))
+        dropout_p = getattr(self.args, 'mc_dropout_p', 0.0)
+        # print("dropout_p =", dropout_p, "training =", self.training)
+        fc_output1 = F.dropout(F.relu(self.fc_layer1(extract_states)), p=dropout_p, training=self.training)
+        fc_output2 = F.dropout(F.relu(self.fc_layer2(fc_output1)), p=dropout_p, training=self.training)
+        fc_output = F.dropout(F.relu(self.fc_layer3(fc_output2)), p=dropout_p, training=self.training)
         mu = F.tanh(self.mu(fc_output))
         sigma = F.sigmoid(self.sigma(fc_output) + 1e-5)
         z = self.normalDistribution(0, 1).sample()
@@ -147,6 +148,8 @@ class ActorCritic(nn.Module):
             self.Critic = torch.load(critic_path, map_location=device)
         self.distribution = torch.distributions.Normal
         self.is_testing_worker = False
+        self.use_uq = getattr(args, 'use_uq', 0) == 1
+        self.mc_samples = getattr(args, 'mc_samples', 20)
 
     def predict(self, s, feat):  # forward func for networks
         s = torch.as_tensor(s, dtype=torch.float32, device=self.device)
@@ -158,7 +161,33 @@ class ActorCritic(nn.Module):
     def get_action(self, s, feat):  # pass values to worker for simulation on cpu.
         mu, std, act, log_prob, s_val = self.predict(s, feat)
         data = dict(mu=mu, std=std, action=act, log_prob=log_prob, state_value=s_val)
+        if self.use_uq:
+            data.update(self.mc_dropout_uncertainty(s, feat))
         return {k: v.detach().cpu().numpy() for k, v in data.items()}
+
+    def mc_dropout_uncertainty(self, s, feat):
+        was_training = self.Actor.training
+        self.Actor.eval()
+        self.Actor.ActionModule.train()
+
+        s = torch.as_tensor(s, dtype=torch.float32, device=self.device)
+        feat = torch.as_tensor(feat, dtype=torch.float32, device=self.device)
+        mus = []
+        with torch.no_grad():
+            for _ in range(self.mc_samples):
+                mu, _, _, _ = self.Actor(s, feat, None, mode='forward')
+                mus.append(mu)
+
+        if was_training:
+            self.Actor.train()
+        else:
+            self.Actor.eval()
+
+        mus = torch.stack(mus)
+        return dict(
+            uq_action_std=mus.std(dim=0, unbiased=False),
+            uq_action_mean=mus.mean(dim=0),
+        )
 
     def get_final_value(self, s, feat):  # terminating V(s) of traj
         s = torch.as_tensor(s, dtype=torch.float32, device=self.device)
@@ -183,7 +212,7 @@ class ActorCritic(nn.Module):
         torch.save(self.Actor, actor_path)
         torch.save(self.Critic, critic_path)
 
-            
+
 def NormedLinear(*args, scale=1.0):
     out = nn.Linear(*args)
     out.weight.data *= scale / out.weight.norm(dim=1, p=2, keepdim=True)

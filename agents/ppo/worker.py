@@ -2,11 +2,14 @@ import csv
 import numpy as np
 import pandas as pd
 from collections import deque
+from agents.std_bb.BBController import BasalBolusController
+from utils.carb_counting import carb_estimate
 from utils.pumpAction import Pump
 from utils.core import get_env, time_in_range, custom_reward, combined_shape, linear_scaling, inverse_linear_scaling
 from agents.ppo.core import Memory
 from utils.statespace import StateSpace
 from utils.reward_func import composite_reward
+
 
 class Worker:
     def __init__(self, args, mode, patients, env_ids, seed, worker_id, device):
@@ -23,15 +26,17 @@ class Worker:
         self.env_id = str(worker_id) + '_' + env_ids[args.patient_id]
         self.env = get_env(self.args, patient_name=self.patient_name, env_id=self.env_id,
                            custom_reward=custom_reward, seed=self.simulation_seed)
+        self.args.sampling_rate = self.env.sampling_time
         self.state_space = StateSpace(self.args)
         self.pump = Pump(self.args, patient_name=self.patient_name)
+        self.bb_controller = BasalBolusController(self.args, patient_name=self.patient_name, use_bolus=True, use_cf=False)
         self.std_basal = self.pump.get_basal()
         self.memory = Memory(self.args, device)
-        self.episode_history = np.zeros(combined_shape(self.max_epi_length, 13), dtype=np.float32)
+        self.episode_history = np.zeros(combined_shape(self.max_epi_length, 15), dtype=np.float32)
         self.reinit_flag = False
         self.init_env()
         self.log1_columns = ['epi', 't', 'cgm', 'meal', 'ins', 'rew', 'rl_ins', 'mu', 'sigma',
-                             'prob', 'state_val', 'day_hour', 'day_min']
+                             'prob', 'state_val', 'day_hour', 'day_min', 'uq_action_std', 'uq_gate']
         self.log2_columns = ['epi', 't', 'reward', 'normo', 'hypo', 'sev_hypo', 'hyper', 'lgbi',
                              'hgbi', 'ri', 'sev_hyper', 'aBGP_rmse', 'cBGP_rmse']
         self.save_log([self.log1_columns], '/'+self.worker_mode+'/data/logs_worker_')
@@ -42,6 +47,8 @@ class Worker:
             self.episode += 1
         self.counter = 0
         self.init_state = self.env.reset()
+        self.last_state = self.init_state
+        self.last_info = None
         self.cur_state, self.feat = self.state_space.update(cgm=self.init_state.CGM, ins=0, meal=0)
         self.pump.calibrate(self.init_state)
         self.calibration_process()
@@ -50,6 +57,8 @@ class Worker:
         self.reinit_flag, cur_cgm = False, 0
         for t in range(0, self.calibration):  # open-loop simulation for calibration period.
             state, reward, is_done, info = self.env.step(self.std_basal)
+            self.last_state = state
+            self.last_info = info
             cur_cgm = state.CGM
             self.cur_state, self.feat = self.state_space.update(cgm=state.CGM, ins=self.std_basal,
                                                                 meal=info['remaining_time'], hour=self.counter,
@@ -59,6 +68,22 @@ class Worker:
             self.reinit_flag = True
         if self.reinit_flag:
             self.init_env()
+
+    def get_human_controller_action(self):
+        if self.last_info is None:
+            bolus_carbs = 0
+        else:
+            carbs = self.last_info['meal'] * self.last_info['sample_time']
+            if self.args.t_meal == 0:
+                bolus_carbs = carbs
+            elif self.args.t_meal == self.last_info['remaining_time']:
+                bolus_carbs = self.last_info['future_carb']
+            else:
+                bolus_carbs = 0
+            if bolus_carbs != 0:
+                bolus_carbs = carb_estimate(bolus_carbs, self.last_info['day_hour'], self.patient_name,
+                                            type=self.args.carb_estimation_method)
+        return self.bb_controller.get_action(meal=bolus_carbs, glucose=self.last_state.CGM)
 
     def rollout(self, policy):
         ri, alive_steps, normo, hypo, sev_hypo, hyper, lgbi, hgbi, sev_hyper = 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -71,26 +96,36 @@ class Worker:
             selected_action = policy_step['action'][0]
             rl_action, pump_action = self.pump.action(agent_action=selected_action,
                                                       prev_state=self.init_state, prev_info=None)
+            uq_action_std = float(policy_step.get('uq_action_std', [0])[0])
+            uq_gate = int(
+                self.worker_mode != 'training'
+                and self.args.use_uq == 1
+                and uq_action_std > self.args.uq_action_threshold
+            )
+            if uq_gate:
+                pump_action = float(np.asarray(self.get_human_controller_action()).reshape(-1)[0])
+                rl_action = pump_action
             state, _reward, is_done, info = self.env.step(pump_action)
+            self.last_state = state
+            self.last_info = info
             reward = composite_reward(self.args, state=state.CGM, reward=_reward)
 
             if self.worker_mode == 'training':   # store -> rollout for training
                 scaled_cgm = linear_scaling(x=state.CGM, x_min=self.args.glucose_min, x_max=self.args.glucose_max)
                 self.memory.store(self.cur_state, self.feat, policy_step['action'][0],
                                   reward, policy_step['state_value'], policy_step['log_prob'], scaled_cgm, self.counter)
-            # update -> state.
             self.cur_state, self.feat = self.state_space.update(cgm=state.CGM, ins=pump_action,
                                                                 meal=info['remaining_time'], hour=(self.counter+1),
-                                                                meal_type=info['meal_type'], carbs=info['future_carb']) #info['day_hour']
+                                                                meal_type=info['meal_type'], carbs=info['future_carb'])
             self.episode_history[self.counter] = [self.episode, self.counter, state.CGM, info['meal'] * info['sample_time'],
                                                   pump_action, reward, rl_action, policy_step['mu'][0], policy_step['std'][0],
                                                   policy_step['log_prob'][0], policy_step['state_value'][0], info['day_hour'],
-                                                  info['day_min']]
+                                                  info['day_min'], uq_action_std, uq_gate]
             self.counter += 1
             stop_factor = (self.max_epi_length - 1) if self.worker_mode == 'training' else (self.max_test_epi_len - 1)
 
             criteria = state.CGM <= 40 or state.CGM >= 600 or self.counter > stop_factor
-            if criteria:  # episode termination criteria.
+            if criteria:
                 if self.worker_mode == 'training':
                     final_val = policy.get_final_value(self.cur_state, self.feat)
                     self.memory.finish_path(final_val)
@@ -108,7 +143,7 @@ class Worker:
                 if self.worker_mode == 'training':
                     self.init_env()
                 else:
-                    break  # stop rollout if this is a testing worker!
+                    break
 
         if self.worker_mode == 'training':
             data = self.memory.get()
