@@ -2,7 +2,7 @@ import pandas as pd
 import glob
 import matplotlib.pyplot as plt
 
-files = glob.glob("results/ppo_patient_6_UQ3/testing/data/logs_worker_*.csv")
+files = glob.glob("results/ppo_patient_6_UQ5/testing/data/logs_worker_*.csv")
 
 df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 

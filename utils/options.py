@@ -118,6 +118,11 @@ class Options:
         self.parser.add_argument('--use_uq', type=int, default=0, help='0 disables UQ, 1 enables MC-dropout UQ during rollout')
         self.parser.add_argument('--uq_action_threshold', type=float, default=0.15, help='gate insulin if MC std of policy mean exceeds this value')
 
+        # only testing parameters 
+        self.parser.add_argument('--test_only', type=int, default=0)
+        self.parser.add_argument('--load_folder_id', type=str, default='')
+        self.parser.add_argument('--checkpoint_episode', type=int, default=129)
+
         # deprecated todo: refactor
         self.parser.add_argument('--bgp_pred_mode', type=bool, default=False, help='future bg prediction')
         self.parser.add_argument('--n_bgp_steps', type=int, default=0, help='future eprediction horizon')

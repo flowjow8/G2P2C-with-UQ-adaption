@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import pandas as pd
 
-experiment = Path("results/ppo_patient_2_UQ")
+experiment = Path("results/ppo_patient_3_UQ_test_seed5")
 
 with open(experiment / "args.json") as file:
     args = json.load(file)
@@ -51,7 +51,7 @@ print("Saved to:", output)
 from pathlib import Path
 import pandas as pd
 
-folder = Path("results/ppo_patient_2_UQ/testing/data")
+folder = Path("results/ppo_patient_3_UQ_test_seed5/testing/data")
 files = sorted(folder.glob("logs_worker_*.csv"))
 
 frames = []

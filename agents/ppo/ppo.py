@@ -229,6 +229,31 @@ class PPO:
             param_group['lr'] = self.pi_lr
         for param_group in self.optimizer_Critic.param_groups:
             param_group['lr'] = self.vf_lr
+    
+    # beginning of my code 
+    def test_only(self, args, patients, env_ids, seed):
+        print("################## starting TEST-ONLY trials #######################")
+
+        testing_args = deepcopy(args)
+        testing_args.meal_amount = [40, 20, 80, 10, 60, 30]
+        testing_args.meal_variance = [1e-8, 1e-8, 1e-8, 1e-8, 1e-8, 1e-8]
+        testing_args.time_variance = [1e-8, 1e-8, 1e-8, 1e-8, 1e-8, 1e-8]
+        testing_args.meal_prob = [1, -1, 1, -1, 1, -1]
+
+        self.policy.is_testing_worker = True
+
+        testing_agents = [
+            Worker(testing_args, 'testing', patients, env_ids, seed + i, i + 5000, self.device)
+            for i in range(self.n_testing_workers)
+        ]
+
+        for i in range(self.n_testing_workers):
+            testing_agents[i].rollout(self.policy)
+
+        self.policy.is_testing_worker = False
+
+        print("TEST-ONLY run completed.")
+# end of my code 
 
     def run(self, args, patients, env_ids, seed):
         MAX_INTERACTIONS = 4000 if args.debug == 1 else 800000
