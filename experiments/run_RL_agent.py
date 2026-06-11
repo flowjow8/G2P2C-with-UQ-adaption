@@ -103,15 +103,15 @@ def set_agent_parameters(args):
         args = set_args(args)
         args = setup_folders(args)
         weights = MAIN_PATH+'/results/ppo_lstm_12_testing/checkpoints/'
-        #agent = PPO(args, device, True, weights+'episode_379_Actor.pth', weights+'episode_379_Critic.pth')
+        agent = PPO(args, device, True, weights+'episode_379_Actor.pth', weights+'episode_379_Critic.pth')
         # beginning of my code 
-        if getattr(args, 'test_only', 0):
-            weights = MAIN_PATH + '/results/' + args.load_folder_id + '/checkpoints/'
-            actor_path = weights + 'episode_' + str(args.checkpoint_episode) + '_Actor.pth'
-            critic_path = weights + 'episode_' + str(args.checkpoint_episode) + '_Critic.pth'
-            agent = PPO(args, device, True, actor_path, critic_path)
-        else:
-            agent = PPO(args, device, False, '', '')    
+        # if getattr(args, 'test_only', 0):
+        #     weights = MAIN_PATH + '/results/' + args.load_folder_id + '/checkpoints/'
+        #     actor_path = weights + 'episode_' + str(args.checkpoint_episode) + '_Actor.pth'
+        #     critic_path = weights + 'episode_' + str(args.checkpoint_episode) + '_Critic.pth'
+        #     agent = PPO(args, device, True, actor_path, critic_path)
+        # else:
+        #     agent = PPO(args, device, False, '', '')    
         # end of my code 
         dst = MAIN_PATH + '/results/' + args.folder_id + '/code'
         copy_folder(MAIN_PATH + '/agents/ppo_aux_plan', dst)
@@ -176,12 +176,13 @@ def main():
     np.random.seed(args.seed)
 
     patients, env_ids = get_patient_env()  # note: left here so that type of subject can be selected.
+    agent.run(args, patients, env_ids, args.seed)
     # beginning of my code 
-    if getattr(args, 'test_only', 0):
-        agent.test_only(args, patients, env_ids, args.seed)
-    else:
-        agent.run(args, patients, env_ids, args.seed)
+    # if getattr(args, 'test_only', 0):
+    #     agent.test_only(args, patients, env_ids, args.seed)
+    # else:
+    #     agent.run(args, patients, env_ids, args.seed)
     # end of code 
-    
+
 if __name__ == '__main__':
     main()
