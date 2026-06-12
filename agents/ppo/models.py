@@ -146,6 +146,10 @@ class ActorCritic(nn.Module):
         if load:
             self.Actor = torch.load(actor_path, map_location=device)
             self.Critic = torch.load(critic_path, map_location=device)
+            # my code 
+            self.Actor.args = args
+            self.Actor.ActionModule.args = args
+            # my code 
         self.distribution = torch.distributions.Normal
         self.is_testing_worker = False
         self.use_uq = getattr(args, 'use_uq', 0) == 1

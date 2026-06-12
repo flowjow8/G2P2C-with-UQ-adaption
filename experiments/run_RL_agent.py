@@ -189,7 +189,7 @@ def main():
     np.random.seed(args.seed)
 
     patients, env_ids = get_patient_env()  # note: left here so that type of subject can be selected.
-    agent.run(args, patients, env_ids, args.seed)
+    # agent.run(args, patients, env_ids, args.seed)
     # beginning of my code 
     if getattr(args, "test_only", 0):
         agent.test_only(args, patients, env_ids, args.seed)
