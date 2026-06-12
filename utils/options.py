@@ -119,9 +119,9 @@ class Options:
         self.parser.add_argument('--uq_action_threshold', type=float, default=0.15, help='gate insulin if MC std of policy mean exceeds this value')
 
         # only testing parameters 
-        # self.parser.add_argument('--test_only', type=int, default=0)
-        # self.parser.add_argument('--load_folder_id', type=str, default='')
-        # self.parser.add_argument('--checkpoint_episode', type=int, default=129)
+        self.parser.add_argument('--test_only', type=int, default=0)
+        self.parser.add_argument('--load_folder_id', type=str, default='')
+        self.parser.add_argument('--checkpoint_episode', type=int, default=129)
 
         # deprecated todo: refactor
         self.parser.add_argument('--bgp_pred_mode', type=bool, default=False, help='future bg prediction')
